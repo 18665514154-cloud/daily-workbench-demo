@@ -312,7 +312,7 @@ function activityData(data){
 function activitySnapshot(data,row,type,legacy=false){
  const a=type==='verification'?(data.anomalies||[]).find(a=>a.id===row.anomaly):null;
  const project=(data.projects||[]).find(p=>p.id===(a?a.project:row.project));
- const labels=type==='verification'?[['验证日期','date'],['类别','category'],['计划','plan'],['过程','process'],['验证数量','quantity'],['实际结果','result'],['结论','conclusion'],['实测数据','data'],['下一步','next'],['预计完成','due']]:[['实际进展','progress'],['下一步','next'],['计划时间','due']];
+ const labels=type==='verification'?[['验证日期','date'],['类别','category'],['计划','plan'],['过程','process'],['验证数量','quantity'],['实际结果','result'],['结论','conclusion'],['实测数据','data'],['下一步','next'],['预计完成','due']]:[[row.status==='done'?'完成前进展（历史备注）':row.status==='skip'?'跳过前进展（历史备注）':'实际进展','progress'],['下一步','next'],['计划时间','due']];
  return {id:crypto.randomUUID(),type,sourceId:row.id,date:type==='verification'?row.updatedDate:dateKey(new Date()),recordedAt:type==='verification'?row.reviewedAt:new Date().toISOString(),project:project?.name||'未关联项目',title:type==='verification'?(a?.title||'未关联异常')+' / '+row.content:row.title,status:type==='task'?({todo:'进行中 / 待办',done:'已完成',skip:'已跳过'}[row.status]):row.status,details:labels.filter(([l,k])=>row[k]).map(([l,k])=>'  ○ '+l+'：'+row[k]).join('\n'),images:structuredClone(row.images||[]),anomalyImages:structuredClone(a?.images||[]),anomalyId:row.anomaly||'',legacy};
 }
 function activityComparable(row,type){if(!row)return '';const fields=type==='verification'?['kind','anomaly','content','status','result','next','due','updatedDate','date','category','plan','process','quantity','conclusion','data','images']:['kind','title','project','progress','next','status'];return JSON.stringify(fields.map(k=>row[k]??''))}
@@ -333,11 +333,12 @@ function dailyActivities(data,date){
  for(const row of data.verifications||[])if(row.kind==='work'&&row.updatedDate===date&&!row.archived&&(data.anomalies||[]).some(a=>a.id===row.anomaly&&a.kind==='work'&&!a.archived)&&!(data.activities||[]).some(e=>e.type==='verification'&&e.sourceId===row.id))events.push(activitySnapshot(data,row,'verification',true));
  return events;
 }
+function activityDisplayDetails(e){return e.type==='task'&&['已完成','已跳过'].includes(e.status)?e.details.replace(/(^|\n)(  ○ )实际进展：/g,'$1$2'+(e.status==='已完成'?'完成前进展（历史备注）':'跳过前进展（历史备注）')+'：'):e.details}
 function dailyEngineeringReport(data,date){
  const events=dailyActivities(data,date),out=['工作日报 · '+date,'','今日完成工作：','注：本栏同时列示已完成及进行中事项；仅使用保存的实际进展。旧记录只有最后已知快照，不能恢复此前已覆盖的变化。'];
  if(!events.length)out.push('今日进度：尚无本日已保存进展，请按实际工作补充。');
  const groups=new Map();for(const e of events){if(!groups.has(e.project))groups.set(e.project,[]);groups.get(e.project).push(e)}
- for(const [project,items] of groups){out.push('','➤ '+project);for(const e of items)out.push('今日进度：'+e.title+' — '+e.status+(e.legacy?'【旧版最后已知快照】':'')+'〔保存于 '+e.recordedAt+'〕',e.details,'  ○ 图片：'+e.images.length+' 张（此条进展快照，纯文本不含图片）');}
+ for(const [project,items] of groups){out.push('','➤ '+project);for(const e of items)out.push('今日进度：'+e.title+' — '+e.status+(e.legacy?'【旧版最后已知快照】':'')+'〔保存于 '+e.recordedAt+'〕',activityDisplayDetails(e),'  ○ 图片：'+e.images.length+' 张（此条进展快照，纯文本不含图片）');}
  out.push('','未完成工作：');const names=new Map(data.projects.map(p=>[p.id,p.name]));for(const q of ['重要且紧急','紧急不重要','重要不紧急','不重要不紧急']){out.push('• '+q);const rows=data.tasks.filter(t=>t.kind==='work'&&t.status==='todo'&&t.quadrant===q);out.push(...(rows.length?rows.map(t=>'  ○ '+(names.get(t.project)||'未关联项目')+' / '+t.title+(t.next?'；下一步：'+t.next:'')):['  ○ 暂无已记录待办']));}
  out.push('','需协调工作：','待填写并审核。不自动猜测协调事项。');return out.filter(x=>x!=='').join('\n');
 }
